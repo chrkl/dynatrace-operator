@@ -63,14 +63,19 @@ func TestReconcile_UpdateImageVersion(t *testing.T) {
 
 	now := metav1.Now()
 	dkState := &controllers.DynakubeState{Instance: &dk, Log: logger.NewDTLogger(), Now: now}
-
-	errVerProvider := func(img string, dockerConfig *dtversion.DockerConfig) (dtversion.ImageVersion, error) {
-		return dtversion.ImageVersion{}, errors.New("Not implemented")
+	status := &dkState.Instance.Status
+	versionedComponents := []dynatracev1beta1.NamedVersionStatuser{
+		&status.ActiveGate, &status.OneAgent, &status.ExtensionController, &status.StatsD,
 	}
 
-	upd, err := ReconcileVersions(ctx, dkState, fakeClient, errVerProvider)
-	assert.Error(t, err)
-	assert.False(t, upd)
+	t.Run("no update if version provider returns error", func(t *testing.T) {
+		errVerProvider := func(img string, dockerConfig *dtversion.DockerConfig) (dtversion.ImageVersion, error) {
+			return dtversion.ImageVersion{}, errors.New("Not implemented")
+		}
+		upd, err := ReconcileVersions(ctx, dkState, fakeClient, errVerProvider)
+		assert.Error(t, err)
+		assert.False(t, upd)
+	})
 
 	data, err := buildTestDockerAuth(t)
 	require.NoError(t, err)
@@ -82,25 +87,29 @@ func TestReconcile_UpdateImageVersion(t *testing.T) {
 		return dtversion.ImageVersion{Version: testVersion, Hash: testHash}, nil
 	}
 
-	upd, err = ReconcileVersions(ctx, dkState, fakeClient, sampleVerProvider)
-	assert.NoError(t, err)
-	assert.True(t, upd)
+	t.Run("image versions and hashes were updated", func(t *testing.T) {
+		{
+			upd, err := ReconcileVersions(ctx, dkState, fakeClient, sampleVerProvider)
+			assert.NoError(t, err)
+			assert.True(t, upd)
+		}
+		for _, component := range versionedComponents {
+			assertVersionStatusEquals(t, testVersion, testHash, now, component)
+		}
+		{
+			upd, err := ReconcileVersions(ctx, dkState, fakeClient, sampleVerProvider)
+			assert.NoError(t, err)
+			assert.False(t, upd)
+		}
+	})
+}
 
-	assert.Equal(t, testVersion, dkState.Instance.Status.ActiveGate.Version)
-	assert.Equal(t, testHash, dkState.Instance.Status.ActiveGate.ImageHash)
-	if ts := dkState.Instance.Status.ActiveGate.LastUpdateProbeTimestamp; assert.NotNil(t, ts) {
-		assert.Equal(t, now, *ts)
+func assertVersionStatusEquals(t *testing.T, expectedVersion, expectedHash string, timePoint metav1.Time, verStatuser dynatracev1beta1.NamedVersionStatuser) {
+	assert.Equalf(t, expectedVersion, verStatuser.GetVersion(), "Unexpected version for versioned component %s", verStatuser.GetName())
+	assert.Equalf(t, expectedHash, verStatuser.GetImageHash(), "Unexpected image hash for versioned component %s", verStatuser.GetName())
+	if ts := verStatuser.GetLastUpdateProbeTimestamp(); assert.NotNilf(t, ts, "Unexpectedly missing update timestamp for versioned component %s", verStatuser.GetName()) {
+		assert.Equalf(t, timePoint, *ts, "Unexpected update timestamp for versioned component %s", verStatuser.GetName())
 	}
-
-	assert.Equal(t, testVersion, dkState.Instance.Status.OneAgent.Version)
-	assert.Equal(t, testHash, dkState.Instance.Status.OneAgent.ImageHash)
-	if ts := dkState.Instance.Status.OneAgent.LastUpdateProbeTimestamp; assert.NotNil(t, ts) {
-		assert.Equal(t, now, *ts)
-	}
-
-	upd, err = ReconcileVersions(ctx, dkState, fakeClient, sampleVerProvider)
-	assert.NoError(t, err)
-	assert.False(t, upd)
 }
 
 // Adding *testing.T parameter to prevent usage in production code

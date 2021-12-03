@@ -26,7 +26,7 @@ func NewStatsD(stsProperties *statefulSetProperties) *StatsD {
 func (statsd *StatsD) BuildContainer() corev1.Container {
 	return corev1.Container{
 		Name:            consts.StatsDContainerName,
-		Image:           statsd.StsProperties.DynaKube.ActiveGateImage(),
+		Image:           statsd.image(),
 		ImagePullPolicy: corev1.PullAlways,
 		Env:             statsd.buildEnvs(),
 		VolumeMounts:    statsd.buildVolumeMounts(),
@@ -70,6 +70,13 @@ func (statsd *StatsD) BuildVolumes() []corev1.Volume {
 			},
 		},
 	}
+}
+
+func (statsd *StatsD) image() string {
+	if statsd.StsProperties.DynaKube.FeatureUseActiveGateImageForStatsD() {
+		return statsd.StsProperties.DynaKube.ActiveGateImage()
+	}
+	return statsd.StsProperties.DynaKube.StatsDImage()
 }
 
 func (statsd *StatsD) buildCommand() []string {
