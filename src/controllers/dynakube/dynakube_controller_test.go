@@ -179,7 +179,13 @@ func TestReconcileActiveGate_Reconcile(t *testing.T) {
 		result, err := r.Reconcile(context.TODO(), reconcile.Request{
 			NamespacedName: types.NamespacedName{Namespace: testNamespace, Name: testName},
 		})
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
 
+		// Reconcile twice since proxy secret is created before the stateful set
+		result, err = r.Reconcile(context.TODO(), reconcile.Request{
+			NamespacedName: types.NamespacedName{Namespace: testNamespace, Name: testName},
+		})
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
 
@@ -261,6 +267,10 @@ func TestReconcile_RemoveRoutingIfDisabled(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Reconcile twice since routing service is created before the stateful set
+	_, err = r.Reconcile(context.TODO(), request)
+	assert.NoError(t, err)
+
+	// Reconcile three times since proxy secret is created before the stateful set
 	_, err = r.Reconcile(context.TODO(), request)
 	assert.NoError(t, err)
 
@@ -379,6 +389,10 @@ func TestReconcile_ActiveGateMultiCapability(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Reconcile twice since routing service is created before the stateful set
+	_, err = r.Reconcile(context.TODO(), request)
+	assert.NoError(t, err)
+
+	// Reconcile three times since proxy secret is created before the stateful set
 	_, err = r.Reconcile(context.TODO(), request)
 	assert.NoError(t, err)
 

@@ -10,6 +10,7 @@ import (
 	dynatracev1beta1 "github.com/Dynatrace/dynatrace-operator/src/api/v1beta1"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/activegate/capability"
 	rcap "github.com/Dynatrace/dynatrace-operator/src/controllers/activegate/reconciler/capability"
+	"github.com/Dynatrace/dynatrace-operator/src/controllers/agproxysecret"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/dtpullsecret"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/dtversion"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/istio"
@@ -198,7 +199,7 @@ func (r *ReconcileDynaKube) reconcileDynaKube(ctx context.Context, dkState *stat
 	dkState.Update(upd, defaultUpdateInterval, "Found updates")
 	dkState.Error(err)
 
-	if !r.reconcileActiveGateCapabilities(dkState) {
+	if !r.reconcileActiveGate(ctx, dkState) {
 		return
 	}
 	if dkState.Instance.HostMonitoringMode() {
@@ -269,6 +270,28 @@ func (r *ReconcileDynaKube) ensureDeleted(obj client.Object) error {
 		return err
 	}
 	return nil
+}
+
+func (r *ReconcileDynaKube) reconcileActiveGate(ctx context.Context, dkState *status.DynakubeState) bool {
+	if !r.reconcileActiveGateProxySecret(ctx, dkState) {
+		return false
+	}
+	return r.reconcileActiveGateCapabilities(dkState)
+}
+
+func (r *ReconcileDynaKube) reconcileActiveGateProxySecret(ctx context.Context, dkState *status.DynakubeState) bool {
+	gen := agproxysecret.NewActiveGateProxySecretGenerator(r.client, r.apiReader, dkState.Instance.Namespace, log)
+	if dkState.Instance.ActiveGateMode() {
+		upd, err := gen.GenerateForDynakube(ctx, dkState.Instance)
+		if dkState.Error(err) || dkState.Update(upd, defaultUpdateInterval, "new ActiveGate proxy secret created") {
+			return false
+		}
+	} else {
+		if err := gen.EnsureDeleted(ctx, dkState.Instance); dkState.Error(err) {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *ReconcileDynaKube) reconcileActiveGateCapabilities(dkState *status.DynakubeState) bool {
